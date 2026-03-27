@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>memo</title>
+    <style>
+        :root { --bg-color: #ffffff; --text-color: #333333; --sidebar-bg: #f0f2f5; --active-blue: #0078d4; }
+        .dark-mode { --bg-color: #1e1e1e; --text-color: #e0e0e0; --sidebar-bg: #2d2d2d; --active-blue: #005a9e; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; }
+        
+        .toolbar { background-color: #0078d4; color: white; padding: 8px; display: flex; align-items: center; gap: 8px; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .toolbar button { background: rgba(255,255,255,0.2); border: none; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        
+        /* 装飾ボタン */
+        .format-group { display: flex; gap: 4px; background: rgba(0,0,0,0.1); padding: 4px; border-radius: 8px; }
+        input[type="color"] { width: 30px; height: 30px; border: none; padding: 0; background: none; cursor: pointer; }
+
+        .main-container { display: flex; flex-grow: 1; position: relative; overflow: hidden; }
+        .sidebar { width: 280px; background-color: var(--sidebar-bg); border-right: 1px solid #ccc; padding: 15px; overflow-y: auto; transition: transform 0.3s ease; position: absolute; top: 0; bottom: 0; left: 0; z-index: 50; }
+        @media (min-width: 768px) { .sidebar { position: relative; transform: none !important; } }
+        .sidebar.hidden { transform: translateX(-100%); }
+
+        .editor-area { flex-grow: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); }
+        
+        /* 編集エリアの修正 */
+        #memo { 
+            flex-grow: 1; padding: 20px; outline: none; overflow-y: auto;
+            font-size: 18px; line-height: 1.6; word-wrap: break-word;
+            -webkit-user-select: text; user-select: text;
+        }
+        #memo:empty:before { content: "ここをタップして入力..."; color: gray; }
+
+        .footer { display: flex; justify-content: space-between; padding: 8px 15px; background: var(--sidebar-bg); font-size: 14px; border-top: 1px solid #ccc; }
+        .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+        .overlay.show { display: block; }
+    
+    /* サイドバーの基本設定 */
+.sidebar { 
+    width: 280px; 
+    position: absolute; 
+    top: 0; 
+    bottom: 0; 
+    left: 0; 
+    z-index: 1000; /* 一番上に持ってくる */
+    transition: transform 0.3s ease; 
+}
+
+/* 隠れているときは画面の左外へ */
+.sidebar.hidden { 
+    transform: translateX(-100%); 
+}
+
+/* 黒い背景の優先順位を下げる */
+.overlay { 
+    z-index: 900; 
+    pointer-events: auto; 
+}
+/* 背景が消えたらクリックを邪魔しないようにする */
+.overlay:not(.show) { 
+    display: none !important; 
+    pointer-events: none; 
+}
+
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button onclick="toggleSidebar()">☰</button>
+    <div class="format-group">
+        <!-- onpointerdownでクリックより先に処理を割り込ませ、選択を維持します -->
+        <button class="format-btn" 
+                onpointerdown="event.preventDefault(); execCmd('bold');" 
+                unselectable="on">B</button>
+        <button class="format-btn" 
+                onpointerdown="event.preventDefault(); execCmd('italic');" 
+                style="font-style: italic;" 
+                unselectable="on">I</button>
+        <input type="color" 
+               onchange="execCmd('foreColor', this.value)" 
+               onpointerdown="event.preventDefault();">
+    </div>
+    <!-- ツールバー内に追加 -->
+<div style="display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.1); padding:4px 8px; border-radius:8px;">
+    <span style="font-size:12px;">A</span>
+    <input type="range" id="global-size-slider" min="12" max="60" value="18" 
+           oninput="changeGlobalFontSize(this.value)" 
+           style="width: 70px; cursor: pointer;">
+    <span style="font-size:18px;">A</span>
+</div>
+
+    <div style="flex-grow:1"></div>
+    <button onclick="exportAllData()">💾</button>
+</div>
+
+<div class="main-container">
+    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+        <button style="width:100%; padding:10px; margin-bottom:10px;" onclick="addFolder()">＋ 新規フォルダ</button>
+        <div id="tree-container"></div>
+    </div>
+    <div class="editor-area">
+        <!-- contenteditable="true" を確実に設定 -->
+        <div id="memo" contenteditable="true"></div>
+        <div class="footer">
+            <span id="current-display">ファイル未選択</span>
+            <span id="char-count">0 文字</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    let db = JSON.parse(localStorage.getItem('memo_db_v8')) || { "メモ": { "はじめて": "文字を選択してBを押してね" } };
+    let currentPath = JSON.parse(localStorage.getItem('last_path_v8')) || { folder: "", file: "" };
+
+    const memo = document.getElementById('memo');
+    const charCount = document.getElementById('char-count');
+
+    // 装飾実行（最重要：フォーカスを外さない処理）
+    function execCmd(command, value = null) {
+    if (!currentPath.file) return;
+
+    // 1. 編集エリアにフォーカスを強制
+    memo.focus();
+
+    // 2. コマンド実行
+    document.execCommand(command, false, value);
+
+    // 3. 実行後、スマホのキーボードが閉じないように再度フォーカス
+    setTimeout(() => {
+        memo.focus();
+        save();
+        updateCharCount();
+    }, 10);
+}
+    
+    function changeGlobalFontSize(size) {
+    // 編集エリア全体の文字サイズを書き換え
+    memo.style.fontSize = size + "px";
+    
+    // 設定を保存（次回開いたときも同じサイズにするため）
+    localStorage.setItem('memo_font_size', size);
+}
+
+// ページ読み込み時に保存されたサイズを復元する処理 (window.onload内などに追加)
+window.addEventListener('load', () => {
+    const savedSize = localStorage.getItem('memo_font_size');
+    if (savedSize) {
+        memo.style.fontSize = savedSize + "px";
+        document.getElementById('global-size-slider').value = savedSize;
+    }
+});
+
+
+// 文字数カウントの修正（もっとも確実に動く方法）
+function updateCharCount() {
+    const text = memo.innerText || "";
+    const count = text.replace(/[\n\r]/g, "").length; // 改行を除外
+    document.getElementById('char-count').innerText = count + " 文字";
+}
+
+    // 保存処理
+    function save() {
+        if (currentPath.file) {
+            db[currentPath.folder][currentPath.file] = memo.innerHTML;
+            localStorage.setItem('memo_db_v8', JSON.stringify(db));
+        }
+    }
+
+    // 入力イベント
+    memo.addEventListener('input', () => {
+        save();
+        updateCharCount();
+    });
+
+    // ファイル選択
+    function selectFile(folder, file) {
+    if (!db[folder] || db[folder][file] === undefined) return;
+    
+    // 1. データのセット
+    currentPath = { folder, file };
+    localStorage.setItem('last_path_v8', JSON.stringify(currentPath));
+    document.getElementById('current-display').textContent = file;
+    memo.innerHTML = db[folder][file] || "";
+    updateCharCount();
+    
+    // 2. サイドバーを強制的に閉じる (スマホ・PC共通)
+    const sb = document.getElementById('sidebar');
+    const ov = document.getElementById('overlay');
+    
+    sb.classList.add('hidden'); // サイドバーを隠すクラスを追加
+    ov.classList.remove('show'); // 黒い背景を消す
+    ov.style.display = "none";    // 念のためスタイルでも非表示にする
+    
+    renderTree();
+    
+    // 3. 編集エリアに自動でピントを合わせる（すぐに打てるように）
+    setTimeout(() => memo.focus(), 100);
+}
+
+
+    /* --- 以下、既存の管理系機能 --- */
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); document.getElementById('overlay').classList.toggle('show'); }
+    function renderTree() {
+    const container = document.getElementById('tree-container');
+    container.innerHTML = "";
+    for (const f in db) {
+        const folderWrap = document.createElement('div');
+        folderWrap.style.marginBottom = "15px";
+        
+        // フォルダ行（名前 + ＋ボタン + 🗑️ボタン）
+        folderWrap.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; margin-bottom:5px;">
+                <span>📁 ${f}</span>
+                <div style="display:flex; gap:5px;">
+                    <button onclick="addFile('${f}')" style="padding:2px 8px;">＋</button>
+                    <button onclick="deleteFolder('${f}')" style="background:none; border:none; cursor:pointer;">🗑️</button>
+                </div>
+            </div>
+        `;
+
+        // ファイルリスト
+        for (const file in db[f]) {
+            const isActive = (currentPath.file === file && currentPath.folder === f);
+            const p = document.createElement('div');
+            p.style.display = "flex";
+            p.style.justifyContent = "space-between";
+            p.style.padding = "8px 10px";
+            p.style.margin = "2px 0";
+            p.style.borderRadius = "5px";
+            p.style.cursor = "pointer";
+            p.style.backgroundColor = isActive ? "#0078d4" : "rgba(0,0,0,0.05)";
+            p.style.color = isActive ? "white" : "inherit";
+
+            p.innerHTML = `
+                <span onclick="selectFile('${f}', '${file}')" style="flex-grow:1;">📄 ${file}</span>
+                <button onclick="deleteFile('${f}', '${file}')" style="background:none; border:none; color:inherit; cursor:pointer; opacity:0.6;">🗑️</button>
+            `;
+            folderWrap.appendChild(p);
+        }
+        container.appendChild(folderWrap);
+    }
+}
+// フォルダ削除
+function deleteFolder(folderName) {
+    if (confirm(`フォルダ「${folderName}」と中身をすべて削除しますか？`)) {
+        delete db[folderName];
+        if (currentPath.folder === folderName) resetEditor();
+        save();
+        renderTree();
+    }
+}
+
+// ファイル削除
+function deleteFile(folder, file) {
+    if (confirm(`ファイル「${file}」を削除しますか？`)) {
+        delete db[folder][file];
+        if (currentPath.folder === folder && currentPath.file === file) resetEditor();
+        save();
+        renderTree();
+    }
+}
+
+// エディタのリセット（削除した後に画面を空にする）
+function resetEditor() {
+    currentPath = { folder: "", file: "" };
+    localStorage.removeItem('last_path_v8');
+    document.getElementById('current-display').textContent = "ファイル未選択";
+    memo.innerHTML = "";
+    updateCharCount();
+}
+
+    function addFolder() { const n = prompt("フォルダ名"); if(n){ db[n] = {}; renderTree(); save(); } }
+    function addFile(f) { const n = prompt("ファイル名"); if(n){ db[f][n] = ""; selectFile(f, n); } }
+    function exportAllData() { const blob = new Blob([JSON.stringify(db)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "backup.json"; a.click(); }
+    window.onload = () => { renderTree(); if(currentPath.file) selectFile(currentPath.folder, currentPath.file); };
+</script>
+</body>
+</html>
