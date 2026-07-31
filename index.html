@@ -18,11 +18,39 @@
         input[type="color"] { width: 30px; height: 30px; border: none; padding: 0; background: none; cursor: pointer; }
 
         .main-container { display: flex; flex-grow: 1; position: relative; overflow: hidden; }
-        .sidebar { width: 280px; background-color: var(--sidebar-bg); border-right: 1px solid #ccc; padding: 15px; overflow-y: auto; transition: transform 0.3s ease; position: absolute; top: 0; bottom: 0; left: 0; z-index: 50; }
-        @media (min-width: 768px) { .sidebar { position: relative; transform: none !important; } }
+
+        /* --- サイドバー：モバイルとPC共通の開閉ロジック --- */
+        .sidebar { 
+            width: 280px; 
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid #ccc;
+            padding: 15px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            position: absolute; 
+            top: 0; bottom: 0; left: 0; 
+            z-index: 1000;
+            transition: transform 0.3s ease, width 0.3s ease, padding 0.3s ease;
+        }
         .sidebar.hidden { transform: translateX(-100%); }
 
-        .editor-area { flex-grow: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); }
+        @media (min-width: 768px) {
+            /* PCではサイドバーはレイアウトの一部（横並び）にする */
+            .sidebar { position: relative; transform: none; }
+            /* 閉じるときは幅を0にして畳む（transformだけだと見た目が変わらない問題を解消） */
+            .sidebar.hidden { 
+                width: 0; 
+                padding-left: 0; 
+                padding-right: 0; 
+                border-right: none; 
+                overflow: hidden; 
+                transform: none;
+            }
+            /* PCでは暗いオーバーレイは不要（レイアウトが横に詰まるだけなので） */
+            .overlay { display: none !important; }
+        }
+
+        .editor-area { flex-grow: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); min-width: 0; }
         
         /* 編集エリアの修正 */
         #memo { 
@@ -32,37 +60,76 @@
         }
         #memo:empty:before { content: "ここをタップして入力..."; color: gray; }
 
+        /* --- ルーラー（PC向け、設定でON/OFF） --- */
+        .ruler-bar {
+            display: none;
+            height: 22px;
+            background: #e9e9e9;
+            border-bottom: 1px solid #c8c8c8;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .ruler-bar.show { display: flex; }
+        @media (max-width: 767px) {
+            /* デスクトップ向け機能なのでスマホ幅では常に非表示 */
+            .ruler-bar.show { display: none !important; }
+        }
+        .ruler-tick {
+            flex: 0 0 auto;
+            border-right: 1px solid #bbb;
+            box-sizing: border-box;
+            font-size: 10px;
+            color: #666;
+            padding-left: 3px;
+            position: relative;
+        }
+        .ruler-tick::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            bottom: 0;
+            width: 1px;
+            height: 6px;
+            background: #999;
+        }
+
         .footer { display: flex; justify-content: space-between; padding: 8px 15px; background: var(--sidebar-bg); font-size: 14px; border-top: 1px solid #ccc; }
-        .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+        .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 900; pointer-events: auto; }
         .overlay.show { display: block; }
-    
-    /* サイドバーの基本設定 */
-.sidebar { 
-    width: 280px; 
-    position: absolute; 
-    top: 0; 
-    bottom: 0; 
-    left: 0; 
-    z-index: 1000; /* 一番上に持ってくる */
-    transition: transform 0.3s ease; 
-}
+        .overlay:not(.show) { display: none !important; pointer-events: none; }
 
-/* 隠れているときは画面の左外へ */
-.sidebar.hidden { 
-    transform: translateX(-100%); 
-}
-
-/* 黒い背景の優先順位を下げる */
-.overlay { 
-    z-index: 900; 
-    pointer-events: auto; 
-}
-/* 背景が消えたらクリックを邪魔しないようにする */
-.overlay:not(.show) { 
-    display: none !important; 
-    pointer-events: none; 
-}
-
+        /* --- 設定モーダル --- */
+        .settings-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.45);
+            z-index: 2000;
+            align-items: center; justify-content: center;
+        }
+        .settings-overlay.show { display: flex; }
+        .settings-box {
+            background: var(--bg-color);
+            color: var(--text-color);
+            width: min(90vw, 360px);
+            max-height: 85vh;
+            overflow-y: auto;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .settings-box h3 { margin-top: 0; }
+        .settings-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; font-size: 14px; }
+        .settings-row.inline { flex-direction: row; align-items: center; justify-content: space-between; }
+        .settings-row select {
+            padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;
+            background: var(--bg-color); color: var(--text-color);
+        }
+        .settings-row input[type="checkbox"] { width: 18px; height: 18px; }
+        .settings-close-btn {
+            width: 100%; padding: 10px; margin-top: 6px;
+            background: var(--active-blue); color: white; border: none; border-radius: 6px;
+            font-size: 14px; font-weight: bold; cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -91,6 +158,7 @@
 </div>
 
     <div style="flex-grow:1"></div>
+    <button onclick="openSettings()" title="設定">⚙️</button>
     <button onclick="exportAllData()">💾</button>
 </div>
 
@@ -101,6 +169,7 @@
         <div id="tree-container"></div>
     </div>
     <div class="editor-area">
+        <div class="ruler-bar" id="ruler-bar"></div>
         <!-- contenteditable="true" を確実に設定 -->
         <div id="memo" contenteditable="true"></div>
         <div class="footer">
@@ -110,9 +179,60 @@
     </div>
 </div>
 
+<!-- 設定モーダル -->
+<div class="settings-overlay" id="settings-overlay" onclick="closeSettingsOnBackdrop(event)">
+    <div class="settings-box" onclick="event.stopPropagation()">
+        <h3>設定</h3>
+
+        <div class="settings-row">
+            <label for="setting-font">フォント</label>
+            <select id="setting-font" onchange="applySettings()">
+                <option value="sans-serif">ゴシック体（標準）</option>
+                <option value="'Yu Gothic', 'Hiragino Kaku Gothic ProN', sans-serif">游ゴシック</option>
+                <option value="'Yu Mincho', 'Hiragino Mincho ProN', serif">明朝体</option>
+                <option value="'UD Digi Kyokasho NK-R', sans-serif">教科書体風</option>
+                <option value="monospace">等幅（コード風）</option>
+                <option value="cursive">手書き風</option>
+            </select>
+        </div>
+
+        <div class="settings-row inline">
+            <label for="setting-bullet">Enterキーで「・」を自動追加</label>
+            <input type="checkbox" id="setting-bullet" onchange="applySettings()">
+        </div>
+
+        <div class="settings-row inline">
+            <label for="setting-ruler">ルーラーを表示する（PC向け）</label>
+            <input type="checkbox" id="setting-ruler" onchange="applySettings()">
+        </div>
+
+        <div class="settings-row">
+            <label for="setting-keyboard">キーボードの種類</label>
+            <select id="setting-keyboard" onchange="applySettings()">
+                <option value="text">通常（文字）</option>
+                <option value="numeric">数字</option>
+                <option value="tel">電話番号</option>
+                <option value="email">メールアドレス</option>
+                <option value="url">URL</option>
+                <option value="decimal">小数</option>
+                <option value="search">検索</option>
+                <option value="none">キーボードを表示しない</option>
+            </select>
+        </div>
+
+        <button class="settings-close-btn" onclick="closeSettings()">閉じる</button>
+    </div>
+</div>
+
 <script>
     let db = JSON.parse(localStorage.getItem('memo_db_v8')) || { "メモ": { "はじめて": "文字を選択してBを押してね" } };
     let currentPath = JSON.parse(localStorage.getItem('last_path_v8')) || { folder: "", file: "" };
+    let appSettings = JSON.parse(localStorage.getItem('memo_settings_v1')) || {
+        font: "sans-serif",
+        bulletOnEnter: false,
+        keyboard: "text",
+        rulerEnabled: false
+    };
 
     const memo = document.getElementById('memo');
     const charCount = document.getElementById('char-count');
@@ -174,6 +294,16 @@ function updateCharCount() {
         updateCharCount();
     });
 
+    // Enterキーで「・」を自動追加する機能
+    memo.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && appSettings.bulletOnEnter) {
+            e.preventDefault();
+            document.execCommand('insertHTML', false, '<br>・ ');
+            save();
+            updateCharCount();
+        }
+    });
+
     // ファイル選択
     function selectFile(folder, file) {
     if (!db[folder] || db[folder][file] === undefined) return;
@@ -201,7 +331,21 @@ function updateCharCount() {
 
 
     /* --- 以下、既存の管理系機能 --- */
-    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('hidden'); document.getElementById('overlay').classList.toggle('show'); }
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        const ov = document.getElementById('overlay');
+        const willHide = !sb.classList.contains('hidden'); // これから隠すかどうか
+
+        sb.classList.toggle('hidden');
+
+        if (willHide) {
+            ov.classList.remove('show');
+            ov.style.display = "none";
+        } else {
+            ov.classList.add('show');
+            ov.style.display = "";
+        }
+    }
     function renderTree() {
     const container = document.getElementById('tree-container');
     container.innerHTML = "";
@@ -274,7 +418,57 @@ function resetEditor() {
     function addFolder() { const n = prompt("フォルダ名"); if(n){ db[n] = {}; renderTree(); save(); } }
     function addFile(f) { const n = prompt("ファイル名"); if(n){ db[f][n] = ""; selectFile(f, n); } }
     function exportAllData() { const blob = new Blob([JSON.stringify(db)], {type: 'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "backup.json"; a.click(); }
-    window.onload = () => { renderTree(); if(currentPath.file) selectFile(currentPath.folder, currentPath.file); };
+
+    /* --- 設定パネル --- */
+    function openSettings() {
+        document.getElementById('setting-font').value = appSettings.font;
+        document.getElementById('setting-bullet').checked = appSettings.bulletOnEnter;
+        document.getElementById('setting-keyboard').value = appSettings.keyboard;
+        document.getElementById('setting-ruler').checked = appSettings.rulerEnabled;
+        document.getElementById('settings-overlay').classList.add('show');
+    }
+    function closeSettings() {
+        document.getElementById('settings-overlay').classList.remove('show');
+    }
+    function closeSettingsOnBackdrop(e) {
+        if (e.target.id === 'settings-overlay') closeSettings();
+    }
+    function applySettings() {
+        appSettings.font = document.getElementById('setting-font').value;
+        appSettings.bulletOnEnter = document.getElementById('setting-bullet').checked;
+        appSettings.keyboard = document.getElementById('setting-keyboard').value;
+        appSettings.rulerEnabled = document.getElementById('setting-ruler').checked;
+        localStorage.setItem('memo_settings_v1', JSON.stringify(appSettings));
+        applySettingsToEditor();
+    }
+    function applySettingsToEditor() {
+        memo.style.fontFamily = appSettings.font;
+        memo.setAttribute('inputmode', appSettings.keyboard);
+        const ruler = document.getElementById('ruler-bar');
+        ruler.classList.toggle('show', appSettings.rulerEnabled);
+    }
+
+    // ルーラーの目盛りを描画（1目盛り=50px、番号付き）
+    function renderRuler() {
+        const bar = document.getElementById('ruler-bar');
+        bar.innerHTML = '';
+        const unitPx = 50;
+        const totalUnits = 60;
+        for (let i = 0; i <= totalUnits; i++) {
+            const tick = document.createElement('div');
+            tick.className = 'ruler-tick';
+            tick.style.width = unitPx + 'px';
+            tick.textContent = i;
+            bar.appendChild(tick);
+        }
+    }
+
+    window.onload = () => {
+        renderRuler();
+        applySettingsToEditor();
+        renderTree();
+        if(currentPath.file) selectFile(currentPath.folder, currentPath.file);
+    };
 </script>
 </body>
 </html>
