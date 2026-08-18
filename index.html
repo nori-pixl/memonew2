@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>メモ帳 − nori-pixl</title>
+    <link rel="icon" href="memo.png" type="image/png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <style>
+        :root { --bg-color: #ffffff; --text-color: #333333; --sidebar-bg: #f0f2f5; --active-blue: #0078d4; --app-scale: 1 }
+        /* 全体サイズをまとめて調整したいときはこの --app-scale の値だけ変更してください（例: 0.85 や 1.2） */
+        html { zoom: var(--app-scale); }
+        .dark-mode { --bg-color: #1e1e1e; --text-color: #e0e0e0; --sidebar-bg: #2d2d2d; --active-blue: #005a9e; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; }
+
+        .toolbar { background-color: #0078d4; color: white; padding: 8px; display: flex; align-items: center; gap: 8px; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .toolbar button { background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+
+        .format-group { display: flex; gap: 4px; background: rgba(0,0,0,0.1); padding: 4px; border-radius: 8px; }
+        input[type="color"] { width: 30px; height: 30px; border: none; padding: 0; background: none; cursor: pointer; }
+
+        /* --- 上部メニューバー（設定モーダルを廃止し、ここに統一） --- */
+        .menu-bar { display: flex; align-items: stretch; height: 40px; background: var(--sidebar-bg); border-bottom: 1px solid #ccc; padding: 0 4px; position: relative; z-index: 150; flex-shrink: 0; overflow-x: auto; overflow-y: visible; }
+        .menu-container { position: relative; display: flex; align-items: stretch; }
+        .menu-item { display: flex; align-items: center; padding: 0 14px; cursor: pointer; font-size: 14px; color: var(--text-color); white-space: nowrap; user-select: none; line-height: 1.2; }
+        .menu-item:hover, .menu-item.active { background: rgba(0,120,212,0.15); }
+        .dropdown { display: none; position: fixed; background: var(--bg-color); color: var(--text-color); border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.25); min-width: 230px; max-height: 80vh; overflow-y: auto; z-index: 500; padding: 6px; flex-direction: column; }
+        .dropdown.show { display: flex; }
+        .dropdown button { text-align: left; background: none; border: none; padding: 9px 10px; font-size: 13px; cursor: pointer; color: inherit; border-radius: 4px; font-family: inherit; }
+        .dropdown button:hover { background: rgba(0,120,212,0.12); }
+        .dropdown-sep { height: 1px; background: #ddd; margin: 4px 2px; }
+        .dropdown-sub { display: flex; flex-direction: column; border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; padding: 4px 0; margin: 2px 0; }
+        /* 右クリックメニューはサイドバー(z-index:1000)より必ず手前に出す */
+        #custom-context-menu { z-index: 1200; }
+        .dropdown-sub > .sub-label { font-size: 11px; color: #888; padding: 4px 10px; }
+        .arrow-pad { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 34px); gap: 3px; justify-content: center; margin: 6px 0; }
+        .arrow-pad button { background: rgba(0,0,0,0.08); border: none; border-radius: 4px; cursor: pointer; font-size: 15px; padding: 0; }
+
+        .main-container { display: flex; flex-grow: 1; position: relative; overflow: hidden; }
+
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid #ccc;
+            padding: 15px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            position: absolute;
+            top: 0; bottom: 0; left: 0;
+            z-index: 1000;
+            transition: transform 0.3s ease, width 0.3s ease, padding 0.3s ease;
+        }
+        .sidebar.hidden { transform: translateX(-100%); }
+
+        @media (min-width: 768px) {
+            .sidebar { position: relative; transform: none; }
+            .sidebar.hidden {
+                width: 0;
+                padding-left: 0;
+                padding-right: 0;
+                border-right: none;
+                overflow: hidden;
+                transform: none;
+            }
+            .overlay { display: none !important; }
+        }
+
+        .editor-area { flex-grow: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); min-width: 0; }
+
+        .editor-body { display: flex; flex-grow: 1; min-height: 0; width: 100%; box-sizing: border-box; overflow: hidden; }
+        .editor-area.print-mode .editor-body { justify-content: center; overflow-y: auto; }
+        .editor-body.print-active .line-gutter { display: none; }
+
+        .line-gutter {
+            flex-shrink: 0; box-sizing: border-box;
+            background: var(--sidebar-bg); color: #888888aa;
+            text-align: right; padding: 20px 8px 20px 0;
+            overflow: hidden; user-select: none; -webkit-user-select: none;
+            border-right: 1px solid #ccc; white-space: pre;
+            font-size: 18px; line-height: 1.6;
+        }
+        .line-gutter div { padding-right: 2px; }
+        .line-gutter.hidden { display: none; }
+
+        #memo {
+            flex-grow: 1; padding: 20px; outline: none; overflow-y: auto;
+            font-size: 18px; line-height: 1.6; word-wrap: break-word;
+            -webkit-user-select: text; user-select: text;
+        }
+        #memo:empty:before { content: "ここをタップして入力..."; color: gray; }
+
+        /* --- 印刷メモ帳モード（印刷用紙のアスペクト比：A4=210:297） --- */
+        .editor-area.print-mode { background: #7d7d7d; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 20px; }
+        .editor-area.print-mode #memo {
+            background: #fff; color: #111;
+            width: 210mm; max-width: 92vw;
+            aspect-ratio: 210 / 297;
+            flex-grow: 0; flex-shrink: 0; align-self: flex-start; margin: 0 auto;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+            box-sizing: border-box;
+            overflow-x: hidden; overflow-y: auto;
+            word-wrap: break-word; overflow-wrap: break-word;
+        }
+        .editor-area.print-mode #memo img,
+        .editor-area.print-mode #memo .resizable-box,
+        .editor-area.print-mode #memo table {
+            max-width: 100%;
+        }
+
+        .ruler-bar {
+            display: none;
+            height: 16px;
+            background: #e9e9e9;
+            border-bottom: 2px solid #c8c8c8;
+            overflow: hidden;
+            flex-shrink: 0;
+            text-align: center;
+            position: relative;
+        }
+        .ruler-bar.show { display: flex; }
+        .ruler-marker {
+            position: absolute;
+            top: 0;
+            width: 0; height: 0;
+            transform: translateX(-7px);
+            cursor: ew-resize;
+            z-index: 60;
+            touch-action: none;
+        }
+        .ruler-marker-left { border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 14px solid #0078d4; }
+        .ruler-marker-right { border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 14px solid #d9534f; }
+        @media (max-width: 767px) {
+            .ruler-bar.show { display: none !important; }
+        }
+        .ruler-tick {
+            flex: 0 0 auto;
+            border-right: 1px solid #bbb;
+            box-sizing: border-box;
+            font-size: 10px;
+            color: #666;
+            padding-left: 3px;
+            position: relative;
+        }
+        .ruler-tick::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            bottom: 0;
+            width: 1px;
+            height: 6px;
+            background: #999;
+        }
+.vertical-text {
+  writing-mode: vertical-rl;  /* 文字を縦書き（右から左）にする */
+  text-orientation: upright;  /* 英数字や記号も倒さず縦向き（直立）にする */
+}
+
+        .footer { display: flex; justify-content: space-between; padding: 8px 15px; background: var(--sidebar-bg); font-size: 14px; border-top: 1px solid #ccc; flex-shrink: 0; }
+        .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.5); z-index: 900; pointer-events: auto; }
+        .overlay.show { display: block; }
+        .overlay:not(.show) { display: none !important; pointer-events: none; }
+
+        .resizable-box { position: relative; display: inline-block; vertical-align: middle; margin: 2px; cursor: grab; }
+        .resizable-box > img, .resizable-box > svg { width: 100%; height: 100%; display: block; }
+        .resizable-box.selected { outline: 2px dashed #0078d4; outline-offset: 2px; }
+
+        #shape-handles { position: fixed; z-index: 600; }
+        .rs-handle { position: fixed; width: 14px; height: 14px; margin: -7px; background: #0078d4; border: 2px solid white; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.4); z-index: 600; touch-action: none; }
+        .rs-handle.e { cursor: ew-resize; }
+        .rs-handle.s { cursor: ns-resize; }
+        .rs-handle.se { cursor: nwse-resize; }
+        .rs-handle.rot { border-radius: 50%; background: #28a745; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; cursor: grab; }
+
+        @media print {
+            .toolbar, .menu-bar, .sidebar, .overlay, .footer, .ruler-bar, #shape-handles, .line-gutter, #custom-context-menu { display: none !important; }
+            .main-container, .editor-area, .editor-body { overflow: visible !important; height: auto !important; display: block !important; }
+            #memo { box-shadow: none !important; width: auto !important; max-width: 210mm; margin: 0 auto; aspect-ratio: auto !important; overflow: visible !important; height: auto !important; }
+            .resizable-box.selected { outline: none !important; }
+            body { overflow: visible !important; height: auto !important; }
+        }
+    </style>
+</head>
+<body>
+<div class="toolbar">
+    <button onclick="toggleSidebar()">☰</button>
+    <div class="format-group">
+        <button class="format-btn"
+                onpointerdown="event.preventDefault(); execCmd('bold');"
+                unselectable="on">B</button>
+        <button class="format-btn"
+                onpointerdown="event.preventDefault(); execCmd('italic');"
+                style="font-style: italic;"
+                unselectable="on">I</button>
+        <input type="color"
+               onchange="execCmd('foreColor', this.value)"
+               onpointerdown="event.preventDefault();">
+    </div>
+    
+    <div style="display:flex; align-items:center; gap:5px; background:rgba(0,0,0,0.1); padding:4px 8px; border-radius:8px;">
+        <span style="font-size:12px;">A</span>
+        <input type="range" id="global-size-slider" min="12" max="60" value="18"
+               oninput="changeGlobalFontSize(this.value)"
+               style="width: 70px; cursor: pointer;">
+        <span style="font-size:18px;">A</span>
+    </div>
+    <div style="flex-grow:1"></div>
+    <button onclick="exportAllData()">💾</button>
+</div>
+
+<div class="menu-bar" id="menu-bar">
+    <div class="menu-container">
+        <div class="menu-item" onclick="toggleMenu('file-menu', this)">ファイル</div>
+        <div class="dropdown" id="file-menu">
+            <button onclick="saveAsText()">テキストとして保存</button>
+            <button onclick="saveAsPNG()">画像として保存（PNG）</button>
+            <div class="dropdown-sep"></div>
+            <button onclick="printFile()">印刷</button>
+            <button onclick="showPreview()">プレビュー</button>
+            <div class="dropdown-sep"></div>
+            <button onclick="downloadCurrentFolderAsPDF()">このフォルダをPDFでダウンロード</button>
+            <button onclick="printCurrentFolder()">このフォルダを印刷</button>
+            <div class="dropdown-sep"></div>
+            <button onclick="openJSON()">JSONを開く</button>
+            <button onclick="sendEmailCurrent()">メールを送信（現在のファイル）</button>
+        </div>
+    </div>
+
+    <div class="menu-container">
+        <div class="menu-item" onclick="toggleMenu('view-menu', this)">表示</div>
+        <div class="dropdown" id="view-menu">
+            <button onclick="zoomIn()">拡大</button>
+            <button onclick="zoomOut()">縮小</button>
+            <button onclick="zoomReset()">100%</button>
+            <div class="dropdown-sep"></div>
+            <button id="menu-statusbar-toggle" onclick="toggleStatusBarMenu()">ステータスバーの表示</button>
+            <button id="menu-ruler-toggle" onclick="toggleRulerMenu()">ルーラーの表示</button>
+            <button id="menu-linenum-toggle" onclick="toggleLineNumbersMenu()">左に行番号を表示</button>
+            <button id="menu-printmode-toggle" onclick="togglePrintModeMenu()">印刷メモ帳を有効にする</button>
+            <button id="menu-bullet-toggle" onclick="toggleBulletMenu()">Enterキーで「・」を自動追加</button>
+            <div class="dropdown-sub">
+                <div class="sub-label">フォント</div>
+                <button onclick="setFont('sans-serif')">ゴシック体（標準）</button>
+                <button onclick="setFont('\'Yu Gothic\', \'Hiragino Kaku Gothic ProN\', sans-serif')">游ゴシック</button>
+                <button onclick="setFont('\'Yu Mincho\', \'Hiragino Mincho ProN\', serif')">明朝体</button>
+                <button onclick="setFont('\'UD Digi Kyokasho NK-R\', sans-serif')">教科書体風</button>
+                <button onclick="setFont('monospace')">等幅（コード風）</button>
+                <button onclick="setFont('cursive')">手書き風</button>
+            </div>
+            <div class="dropdown-sub">
+                <div class="sub-label">キーボードの種類</div>
+                <button onclick="setKeyboard('text')">通常（文字）</button>
+                <button onclick="setKeyboard('numeric')">数字</button>
+                <button onclick="setKeyboard('tel')">電話番号</button>
+                <button onclick="setKeyboard('email')">メールアドレス</button>
+                <button onclick="setKeyboard('url')">URL</button>
+                <button onclick="setKeyboard('decimal')">小数</button>
+                <button onclick="setKeyboard('search')">検索</button>
+                <button onclick="setKeyboard('none')">キーボードを表示しない</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="menu-container">
+        <div class="menu-item" onclick="toggleMenu('insert-menu', this)">挿入</div>
+        <div class="dropdown" id="insert-menu">
+            <button onclick="triggerInsertImage()">画像挿入</button>
+            <div class="dropdown-sub">
+                <div class="sub-label">図形</div>
+                <button onclick="insertShapeSVG('rect')">四角形</button>
+                <button onclick="insertShapeSVG('circle')">円</button>
+                <button onclick="insertShapeSVG('triangle')">三角形</button>
+                <button onclick="insertShapeSVG('line')">線</button>
+                <button onclick="insertShapeSVG('arrow')">矢印</button>
+            </div>
+            <div class="dropdown-sub">
+                <div class="sub-label">図形の色（新規挿入 / 選択中に適用）</div>
+                <div style="display:flex; align-items:center; gap:8px; padding:4px 10px;">
+                    <input type="color" id="shape-color-input" value="#4da3ff" onchange="applyColorToSelectedShape()">
+                    <button style="padding:6px 10px;" onclick="applyColorToSelectedShape()">選択中の図形に適用</button>
+                </div>
+            </div>
+            <button onclick="triggerInsertChart()">グラフ（エクセル経由）</button>
+        </div>
+    </div>
+
+    <div class="menu-container">
+        <div class="menu-item" onclick="toggleMenu('edit-menu', this)">操作</div>
+        <div class="dropdown" id="edit-menu">
+            <button id="selection-toggle-btn" onclick="toggleSelectionMode()"><span id="selection-mode-label">選択を開始</span></button>
+            <div class="arrow-pad">
+                <div></div><button onclick="moveOrExtend('up')">↑</button><div></div>
+                <button onclick="moveOrExtend('left')">←</button><div></div><button onclick="moveOrExtend('right')">→</button>
+                <div></div><button onclick="moveOrExtend('down')">↓</button><div></div>
+            </div>
+            <div class="dropdown-sep"></div>
+            <button onclick="doCut()">切り取り</button>
+            <button onclick="doCopy()">コピー</button>
+            <button onclick="doPaste()">貼り付け</button>
+            <button onclick="doDelete()">削除</button>
+            <div class="dropdown-sep"></div><button
+                onclick="undoAction()"
+                >戻る</button>
+        <button 
+                onclick="redoAction()"
+                >進む</button>
+        </div>
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+
+        <button style="width:100%; padding:10px; margin-bottom:10px;" onclick="addFolder()">＋ 新規フォルダ</button>
+        <div id="tree-container"></div>
+    </div>
+    <div class="editor-area" id="editor-area">
+        <div class="ruler-bar" id="ruler-bar">
+            <div class="ruler-marker ruler-marker-left" id="ruler-marker-left" title="左インデント"></div>
+            <div class="ruler-marker ruler-marker-right" id="ruler-marker-right" title="右インデント"></div>
+        </div>
+        <div class="editor-body" id="editor-body">
+            <div class="line-gutter hidden" id="line-gutter"></div>
+            <div id="memo" contenteditable="true"></div>
+        </div>
+        <div class="footer" id="footer">
+            <span id="current-display">ファイル未選択</span>
+            <span id="char-count">0 文字</span>
+        </div>
+    </div>
+</div>
+
+<!-- 右クリックメニュー（フォルダ / ファイル / エディター / 空欄 共通） -->
+<div class="dropdown" id="custom-context-menu" style="min-width:180px;"></div>
+
+<!-- 図形/画像のリサイズハンドル（コンテンツ本体には含めない） -->
+<div id="shape-handles" style="display:none;">
+    <div class="rs-handle e" data-pos="e"></div>
+    <div class="rs-handle s" data-pos="s"></div>
+    <div class="rs-handle se" data-pos="se"></div>
+    <div class="rs-handle rot" data-pos="rot" title="ドラッグして回転">⟳</div>
+</div>
+
+<!-- 隠しファイル入力群 -->
+<input type="file" id="json-file-input" accept=".json" style="display:none" onchange="handleJsonOpen(event)">
+<input type="file" id="image-insert-input" accept="image/*" style="display:none" onchange="handleImageInsert(event)">
+<input type="file" id="excel-chart-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelChart(event)">
+
+<script>
+    let db = JSON.parse(localStorage.getItem('memo_db_v8')) || { "メモ": { "はじめて": "文字を選択してBを押してね" } };
+    let currentPath = JSON.parse(localStorage.getItem('last_path_v8')) || { folder: "", file: "" };
+    let appSettings = JSON.parse(localStorage.getItem('memo_settings_v1')) || {
+        font: "sans-serif",
+        bulletOnEnter: false,
+        keyboard: "text",
+        rulerEnabled: false,
+        statusBarVisible: true,
+        printNotebook: false,
+        lineNumbers: false
+    };
+    let zoomLevel = 100;
+    let selectionMode = false;
+    let selectedBox = null;
+    let draggedBox = null;
+    let itemClipboard = null; // { type: 'folder'|'file', name, folder?, data }
+
+    const memo = document.getElementById('memo');
+
+    function saveSettings() {
+        localStorage.setItem('memo_settings_v1', JSON.stringify(appSettings));
+    }
+
+    /* ================= 書式コマンド ================= */
+    function execCmd(command, value = null) {
+        if (!currentPath.file) return;
+        memo.focus();
+        document.execCommand(command, false, value);
+        setTimeout(() => {
+            memo.focus();
+            save();
+            updateCharCount();
+        }, 10);
+    }
+
+    function changeGlobalFontSize(size) {
+        memo.style.fontSize = size + "px";
+        localStorage.setItem('memo_font_size', size);
+        updateLineNumbers();
+    }
+
+    window.addEventListener('load', () => {
+        const savedSize = localStorage.getItem('memo_font_size');
+        if (savedSize) {
+            memo.style.fontSize = savedSize + "px";
+            document.getElementById('global-size-slider').value = savedSize;
+        }
+        updateLineNumbers();
+    });
+
+    function updateCharCount() {
+        const text = memo.innerText || "";
+        const count = text.replace(/[\n\r]/g, "").length;
+        document.getElementById('char-count').innerText = count + " 文字";
+    }
+
+    function save() {
+        if (currentPath.file && db[currentPath.folder]) {
+            db[currentPath.folder][currentPath.file] = memo.innerHTML;
+        }
+        localStorage.setItem('memo_db_v8', JSON.stringify(db));
+        commitHistory();
+    }
+
+    /* ================= 独自の元に戻す／やり直し履歴（undoStack / redoStack） ================= */
+    let undoStack = [];
+    let redoStack = [];
+    let lastSnapshot = "";
+
+    function initHistoryForCurrentFile() {
+        undoStack = [];
+        redoStack = [];
+        lastSnapshot = memo.innerHTML;
+    }
+    function commitHistory() {
+        const html = memo.innerHTML;
+        if (html === lastSnapshot) return;
+        undoStack.push(lastSnapshot);
+        if (undoStack.length > 100) undoStack.shift();
+        redoStack = [];
+        lastSnapshot = html;
+    }
+    function applyHistorySnapshot(html) {
+        memo.innerHTML = html;
+        if (currentPath.file && db[currentPath.folder]) {
+            db[currentPath.folder][currentPath.file] = memo.innerHTML;
+        }
+        localStorage.setItem('memo_db_v8', JSON.stringify(db));
+        updateCharCount();
+        updateLineNumbers();
+        deselectResizableBox();
+        memo.focus();
+    }
+    function undoAction() {
+        if (!currentPath.file) return;
+        commitHistory();
+        if (undoStack.length === 0) return;
+        redoStack.push(lastSnapshot);
+        const prev = undoStack.pop();
+        lastSnapshot = prev;
+        applyHistorySnapshot(prev);
+    }
+    function redoAction() {
+        if (!currentPath.file) return;
+        if (redoStack.length === 0) return;
+        undoStack.push(lastSnapshot);
+        const next = redoStack.pop();
+        lastSnapshot = next;
+        applyHistorySnapshot(next);
+    }
+
+    memo.addEventListener('input', () => {
+        save();
+        updateCharCount();
+        updateLineNumbers();
+    });
+
+    memo.addEventListener('scroll', () => {
+        const gutter = document.getElementById('line-gutter');
+        if (gutter) gutter.scrollTop = memo.scrollTop;
+    });
+
+    memo.addEventListener('beforeinput', (e) => {
+        if (e.inputType === 'historyUndo') { e.preventDefault(); undoAction(); }
+        else if (e.inputType === 'historyRedo') { e.preventDefault(); redoAction(); }
+    });
+
+    memo.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showEditorContextMenu(e);
+    });
+
+    document.getElementById('sidebar').addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showSidebarContextMenu(e);
+    });
+
+    memo.addEventListener('keydown', (e) => {
+        const ctrlOrCmd = e.ctrlKey || e.metaKey;
+        if (ctrlOrCmd && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+            e.preventDefault();
+            undoAction();
+            return;
+        }
+        if (ctrlOrCmd && ((e.key === 'y' || e.key === 'Y') || (e.shiftKey && (e.key === 'z' || e.key === 'Z')))) {
+            e.preventDefault();
+            redoAction();
+            return;
+        }
+        if (selectionMode && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+            moveOrExtend(map[e.key]);
+            return;
+        }
+        /* Android端末の一部WebViewはIME(Gboard等)のカーソル移動ボタンがcontenteditable内で
+           効かないことがあるため、矢印キーはJS側で確実にキャレットを動かす */
+        if (!selectionMode && !ctrlOrCmd && !e.altKey && !e.shiftKey &&
+            ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            const sel = window.getSelection();
+            if (sel) {
+                e.preventDefault();
+                const dirMap = {
+                    ArrowLeft: ['backward', 'character'],
+                    ArrowRight: ['forward', 'character'],
+                    ArrowUp: ['backward', 'line'],
+                    ArrowDown: ['forward', 'line']
+                };
+                const [d, g] = dirMap[e.key];
+                sel.modify('move', d, g);
+                updateLineNumbers();
+            }
+            return;
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.isComposing || e.keyCode === 229) return; // IME変換確定のEnterはそのまま
+            e.preventDefault();
+            if (appSettings.bulletOnEnter) {
+                document.execCommand('insertHTML', false, '<br>・ ');
+            } else {
+                document.execCommand('insertLineBreak');
+            }
+            save();
+            updateCharCount();
+            updateLineNumbers();
+            return;
+        }
+    });
+
+    /* ================= ファイル選択・ツリー ================= */
+    function selectFile(folder, file) {
+        if (!db[folder] || db[folder][file] === undefined) return;
+        currentPath = { folder, file };
+        localStorage.setItem('last_path_v8', JSON.stringify(currentPath));
+        document.getElementById('current-display').textContent = file;
+        memo.innerHTML = db[folder][file] || "";
+        updateCharCount();
+        updateLineNumbers();
+        initHistoryForCurrentFile();
+
+        const sb = document.getElementById('sidebar');
+        const ov = document.getElementById('overlay');
+        sb.classList.add('hidden');
+        ov.classList.remove('show');
+        ov.style.display = "none";
+
+        renderTree();
+        setTimeout(() => memo.focus(), 100);
+    }
+
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        const ov = document.getElementById('overlay');
+        const willHide = !sb.classList.contains('hidden');
+        sb.classList.toggle('hidden');
+        if (willHide) {
+            ov.classList.remove('show');
+            ov.style.display = "none";
+        } else {
+            ov.classList.add('show');
+            ov.style.display = "";
+        }
+    }
+
+    function renderTree() {
+        const container = document.getElementById('tree-container');
+        container.innerHTML = "";
+        for (const f in db) {
+            const folderWrap = document.createElement('div');
+            folderWrap.style.marginBottom = "15px";
+            folderWrap.innerHTML = `
+                <div oncontextmenu="event.preventDefault(); event.stopPropagation(); showFolderContextMenu(event, '${f}');" style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; margin-bottom:5px;">
+                    <span>📁 ${f}</span>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="addFile('${f}')" style="padding:2px 8px;">＋</button>
+                        <button onclick="deleteFolder('${f}')" style="background:none; border:none; cursor:pointer;">🗑️</button>
+                    </div>
+                </div>
+            `;
+            for (const file in db[f]) {
+                const isActive = (currentPath.file === file && currentPath.folder === f);
+                const p = document.createElement('div');
+                p.style.display = "flex";
+                p.style.justifyContent = "space-between";
+                p.style.padding = "8px 10px";
+                p.style.margin = "2px 0";
+                p.style.borderRadius = "5px";
+                p.style.cursor = "pointer";
+                p.style.backgroundColor = isActive ? "#0078d4" : "rgba(0,0,0,0.05)";
+                p.style.color = isActive ? "white" : "inherit";
+                p.setAttribute('oncontextmenu', `event.preventDefault(); event.stopPropagation(); showFileContextMenu(event, '${f}', '${file}');`);
+                p.innerHTML = `
+                    <span onclick="selectFile('${f}', '${file}')" style="flex-grow:1;">📄 ${file}</span>
+                    <button onclick="deleteFile('${f}', '${file}')" style="background:none; border:none; color:inherit; cursor:pointer; opacity:0.6;">🗑️</button>
+                `;
+                folderWrap.appendChild(p);
+            }
+            container.appendChild(folderWrap);
+        }
+    }
+
+    function deleteFolder(folderName) {
+        if (confirm(`フォルダ「${folderName}」と中身をすべて削除しますか？`)) {
+            delete db[folderName];
+            if (currentPath.folder === folderName) resetEditor();
+            save();
+            renderTree();
+        }
+    }
+
+    function deleteFile(folder, file) {
+        if (confirm(`ファイル「${file}」を削除しますか？`)) {
+            delete db[folder][file];
+            if (currentPath.folder === folder && currentPath.file === file) resetEditor();
+            save();
+            renderTree();
+        }
+    }
+
+    function resetEditor() {
+        currentPath = { folder: "", file: "" };
+        localStorage.removeItem('last_path_v8');
+        document.getElementById('current-display').textContent = "ファイル未選択";
+        memo.innerHTML = "";
+        updateCharCount();
+        updateLineNumbers();
+        initHistoryForCurrentFile();
+    }
+
+    function addFolder() { const n = prompt("フォルダ名"); if (n) { db[n] = {}; renderTree(); save(); } }
+    function addFile(f) { const n = prompt("ファイル名"); if (n) { db[f][n] = ""; save(); selectFile(f, n); } }
+    function exportAllData() { const blob = new Blob([JSON.stringify(db)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "backup.json"; a.click(); }
+
+    /* ================= 行番号（左ガター） ================= */
+    function countLogicalLines() {
+        const brCount = memo.querySelectorAll('br').length;
+        // Chrome系のcontenteditableは、末尾が空行のとき、キャレット表示のために
+        // 「予備の<br>」をもう1つ自動で追加する。そのため末尾の子要素がbrの場合は
+        // その最後のbrを行区切りとしてカウントしない（実際の改行はbrCount本のまま）。
+        let node = memo.lastChild;
+        while (node && node.nodeType === 3 && node.textContent.trim() === '') {
+            node = node.previousSibling;
+        }
+        const lastIsBr = !!node && node.nodeType === 1 && node.tagName === 'BR';
+        return lastIsBr ? Math.max(brCount, 1) : brCount + 1;
+    }
+    function updateLineNumbers() {
+        const gutter = document.getElementById('line-gutter');
+        const body = document.getElementById('editor-body');
+        if (!gutter) return;
+        if (!appSettings.lineNumbers) {
+            gutter.classList.add('hidden');
+            return;
+        }
+        gutter.classList.remove('hidden');
+        if (body) body.classList.toggle('print-active', !!appSettings.printNotebook);
+
+        const cs = getComputedStyle(memo);
+        gutter.style.fontSize = cs.fontSize;
+        gutter.style.lineHeight = (cs.lineHeight && cs.lineHeight !== 'normal') ? cs.lineHeight : '1.6';
+        gutter.style.paddingTop = cs.paddingTop;
+        gutter.style.paddingBottom = cs.paddingBottom;
+
+        const count = countLogicalLines();
+        let html = '';
+        for (let i = 1; i <= count; i++) html += `<div>${i}</div>`;
+        gutter.innerHTML = html;
+        gutter.style.width = (24 + String(count).length * 8) + 'px';
+        gutter.scrollTop = memo.scrollTop;
+    }
+    function toggleLineNumbersMenu() {
+        appSettings.lineNumbers = !appSettings.lineNumbers;
+        saveSettings();
+        updateLineNumbers();
+        refreshMenuStates();
+    }
+
+    /* ================= 右クリックメニュー（共通） ================= */
+    function showContextMenu(x, y, itemsHtml) {
+        document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
+        const menu = document.getElementById('custom-context-menu');
+        menu.innerHTML = itemsHtml;
+        menu.classList.add('show');
+        const dw = menu.offsetWidth, dh = menu.offsetHeight;
+        let left = x, top = y;
+        if (left + dw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - dw - 8);
+        if (top + dh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - dh - 8);
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    }
+    function hideContextMenu() {
+        const menu = document.getElementById('custom-context-menu');
+        if (menu) menu.classList.remove('show');
+    }
+
+    function showFolderContextMenu(e, folder) {
+        const html = `
+            <button onclick="hideContextMenu(); deleteFolder('${folder}')">削除</button>
+            <button onclick="hideContextMenu(); copyFolder('${folder}')">コピー</button>
+            <button onclick="hideContextMenu(); duplicateFolder('${folder}')">複製</button>
+            <button onclick="hideContextMenu(); downloadFolderAsPDF('${folder}')">PDFでダウンロード</button>
+            <button onclick="hideContextMenu(); printFolder('${folder}')">印刷</button>
+        `;
+        showContextMenu(e.clientX, e.clientY, html);
+    }
+    function showFileContextMenu(e, folder, file) {
+        const html = `
+            <button onclick="hideContextMenu(); deleteFile('${folder}','${file}')">削除</button>
+            <button onclick="hideContextMenu(); copyFileToClipboard('${folder}','${file}')">コピー</button>
+            <button onclick="hideContextMenu(); duplicateFile('${folder}','${file}')">複製</button>
+            <button onclick="hideContextMenu(); printFileByPath('${folder}','${file}')">印刷</button>
+            <button onclick="hideContextMenu(); downloadFileAsPNG('${folder}','${file}')">PNGでダウンロード</button>
+        `;
+        showContextMenu(e.clientX, e.clientY, html);
+    }
+    function showSidebarContextMenu(e) {
+        const html = `
+            <button onclick="hideContextMenu(); pasteFileFromClipboard()">貼り付け</button>
+            <button onclick="hideContextMenu(); clearAllData()">すべてをクリア</button>
+        `;
+        showContextMenu(e.clientX, e.clientY, html);
+    }
+    function showEditorContextMenu(e) {
+        const html = `
+            <button onclick="hideContextMenu(); memo.focus(); document.execCommand('selectAll');">すべてを選択</button>
+            <button onclick="hideContextMenu(); doCopy();">コピー</button>
+            <button onclick="hideContextMenu(); doPaste();">貼り付け</button>
+            <button onclick="hideContextMenu(); doCut();">切り取り</button>
+            <button onclick="hideContextMenu(); doDelete();">削除</button>
+        `;
+        showContextMenu(e.clientX, e.clientY, html);
+    }
+
+    /* ================= フォルダ：コピー／複製／PDF ================= */
+    function copyFolder(folder) {
+        if (!db[folder]) return;
+        itemClipboard = { type: 'folder', name: folder, data: JSON.parse(JSON.stringify(db[folder])) };
+    }
+    function duplicateFolder(folder) {
+        if (!db[folder]) return;
+        let newName = folder + 'のコピー';
+        let i = 2;
+        while (db[newName] !== undefined) { newName = folder + 'のコピー' + i; i++; }
+        db[newName] = JSON.parse(JSON.stringify(db[folder]));
+        save(); renderTree();
+    }
+    function buildFolderPrintHtml(folder) {
+        let bodyHtml = `<h1 style="font-family:sans-serif;">${folder}</h1>`;
+        for (const file in db[folder]) {
+            bodyHtml += `<h2 style="font-family:sans-serif; border-bottom:1px solid #ccc; margin-top:32px;">${file}</h2>`;
+            bodyHtml += `<div style="font-family:sans-serif;">${db[folder][file] || ''}</div>`;
+        }
+        return bodyHtml;
+    }
+    function openFolderInPrintWindow(folder) {
+        if (!db[folder]) return;
+        const w = window.open('', '_blank');
+        if (!w) { alert('ポップアップがブロックされました。ポップアップを許可してください。'); return; }
+        const bodyHtml = buildFolderPrintHtml(folder);
+        w.document.write(`<html><head><title>${folder}</title></head><body style="max-width:210mm;margin:auto;padding:20px;">${bodyHtml}</body></html>`);
+        w.document.close();
+        setTimeout(() => { w.focus(); w.print(); }, 300);
+    }
+    function downloadFolderAsPDF(folder) { openFolderInPrintWindow(folder); }
+    /* フォルダ内のメモファイル分をまとめて印刷（印刷ダイアログで「PDFに保存」を選べばPDF化も可能） */
+    function printFolder(folder) { openFolderInPrintWindow(folder); }
+    function downloadCurrentFolderAsPDF() {
+        if (!currentPath.folder) { alert('フォルダが選択されていません。サイドバーでファイルを選んでください。'); return; }
+        downloadFolderAsPDF(currentPath.folder);
+    }
+    function printCurrentFolder() {
+        if (!currentPath.folder) { alert('フォルダが選択されていません。サイドバーでファイルを選んでください。'); return; }
+        printFolder(currentPath.folder);
+    }
+
+    /* ================= ファイル：コピー／複製／印刷／PNG ================= */
+    function copyFileToClipboard(folder, file) {
+        if (!db[folder] || db[folder][file] === undefined) return;
+        itemClipboard = { type: 'file', name: file, data: db[folder][file] };
+        const tmp = document.createElement('div');
+        tmp.innerHTML = db[folder][file] || '';
+        const text = tmp.innerText || '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => {});
+        }
+    }
+    function duplicateFile(folder, file) {
+        if (!db[folder] || db[folder][file] === undefined) return;
+        let newName = file + 'のコピー';
+        let i = 2;
+        while (db[folder][newName] !== undefined) { newName = file + 'のコピー' + i; i++; }
+        db[folder][newName] = db[folder][file];
+        save(); renderTree();
+    }
+    function printFileByPath(folder, file) {
+        if (!db[folder] || db[folder][file] === undefined) return;
+        const w = window.open('', '_blank');
+        if (!w) { alert('ポップアップがブロックされました'); return; }
+        w.document.write(`<html><head><title>${file}</title></head><body style="font-family:sans-serif; padding:40px; max-width:210mm; margin:auto;">${db[folder][file] || ''}</body></html>`);
+        w.document.close();
+        setTimeout(() => { w.focus(); w.print(); }, 300);
+    }
+    function exportHtmlAsPNG(htmlContent, filename) {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:absolute; left:-9999px; top:0; width:600px; font-family:sans-serif; font-size:18px; padding:20px; box-sizing:border-box;';
+        probe.innerHTML = htmlContent;
+        document.body.appendChild(probe);
+        const w = Math.max(probe.scrollWidth, 400);
+        const h = Math.max(probe.scrollHeight, 300);
+        document.body.removeChild(probe);
+        const data = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+            <foreignObject width="100%" height="100%">
+                <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:sans-serif; font-size:18px; padding:20px; background:white; color:black; width:${w}px; box-sizing:border-box;">${htmlContent}</div>
+            </foreignObject>
+        </svg>`;
+        const svgBlob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(url);
+            canvas.toBlob(blob => {
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename + '.png';
+                a.click();
+            });
+        };
+        img.onerror = () => alert('画像化に失敗しました。内容によっては非対応の場合があります。');
+        img.src = url;
+    }
+    function downloadFileAsPNG(folder, file) {
+        if (!db[folder] || db[folder][file] === undefined) return;
+        exportHtmlAsPNG(db[folder][file] || '', file);
+    }
+
+    /* ================= 空欄の右クリック：貼り付け／すべてをクリア ================= */
+    function pasteFileFromClipboard() {
+        if (!itemClipboard) { alert('クリップボードが空です'); return; }
+        if (itemClipboard.type === 'folder') {
+            let newName = itemClipboard.name;
+            let i = 2;
+            while (db[newName] !== undefined) { newName = itemClipboard.name + i; i++; }
+            db[newName] = JSON.parse(JSON.stringify(itemClipboard.data));
+            save(); renderTree();
+        } else if (itemClipboard.type === 'file') {
+            let targetFolder = currentPath.folder && db[currentPath.folder] ? currentPath.folder : null;
+            if (!targetFolder) {
+                const names = Object.keys(db);
+                targetFolder = names.length ? names[0] : null;
+            }
+            if (!targetFolder) {
+                targetFolder = 'メモ';
+                db[targetFolder] = {};
+            }
+            let newName = itemClipboard.name;
+            let i = 2;
+            while (db[targetFolder][newName] !== undefined) { newName = itemClipboard.name + i; i++; }
+            db[targetFolder][newName] = itemClipboard.data;
+            save(); renderTree();
+        }
+    }
+    function clearAllData() {
+        if (confirm('すべてのフォルダとメモを削除します。よろしいですか？')) {
+            db = {};
+            resetEditor();
+            save();
+            renderTree();
+        }
+    }
+
+    /* ================= メニューバー（開閉・状態表示） ================= */
+    function toggleMenu(id, btnEl) {
+        const target = document.getElementById(id);
+        const isOpen = target.classList.contains('show');
+        document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
+        if (isOpen) return;
+
+        target.classList.add('show');
+        refreshMenuStates();
+
+        const rect = btnEl.getBoundingClientRect();
+        const dw = target.offsetWidth;
+        const dh = target.offsetHeight;
+        let left = rect.left;
+        let top = rect.bottom;
+        if (left + dw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - dw - 8);
+        if (top + dh > window.innerHeight - 8) top = Math.max(8, rect.top - dh);
+        target.style.left = left + 'px';
+        target.style.top = top + 'px';
+    }
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.menu-bar')) {
+            document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
+        }
+    });
+    function refreshMenuStates() {
+        document.getElementById('menu-statusbar-toggle').textContent = (appSettings.statusBarVisible !== false ? '✓ ' : '　 ') + 'ステータスバーの表示';
+        document.getElementById('menu-ruler-toggle').textContent = (appSettings.rulerEnabled ? '✓ ' : '　 ') + 'ルーラーの表示';
+        document.getElementById('menu-printmode-toggle').textContent = (appSettings.printNotebook ? '✓ ' : '　 ') + '印刷メモ帳を有効にする';
+        document.getElementById('menu-bullet-toggle').textContent = (appSettings.bulletOnEnter ? '✓ ' : '　 ') + 'Enterキーで「・」を自動追加';
+        document.getElementById('menu-linenum-toggle').textContent = (appSettings.lineNumbers ? '✓ ' : '　 ') + '左に行番号を表示';
+    }
+
+    /* ================= 表示メニュー機能 ================= */
+    function applySettingsToEditor() {
+        memo.style.fontFamily = appSettings.font;
+        memo.setAttribute('inputmode', appSettings.keyboard);
+        document.getElementById('ruler-bar').classList.toggle('show', appSettings.rulerEnabled);
+        document.getElementById('editor-area').classList.toggle('print-mode', appSettings.printNotebook);
+        document.getElementById('footer').style.display = (appSettings.statusBarVisible === false) ? 'none' : 'flex';
+        updateLineNumbers();
+    }
+    function setFont(font) { appSettings.font = font; saveSettings(); applySettingsToEditor(); }
+    function setKeyboard(kb) { appSettings.keyboard = kb; saveSettings(); applySettingsToEditor(); }
+    function toggleBulletMenu() { appSettings.bulletOnEnter = !appSettings.bulletOnEnter; saveSettings(); refreshMenuStates(); }
+    function toggleRulerMenu() { appSettings.rulerEnabled = !appSettings.rulerEnabled; saveSettings(); applySettingsToEditor(); refreshMenuStates(); }
+    function togglePrintModeMenu() { appSettings.printNotebook = !appSettings.printNotebook; saveSettings(); applySettingsToEditor(); refreshMenuStates(); }
+    function toggleStatusBarMenu() { appSettings.statusBarVisible = (appSettings.statusBarVisible === false) ? true : false; saveSettings(); applySettingsToEditor(); refreshMenuStates(); }
+
+    function zoomIn() { zoomLevel = Math.min(300, zoomLevel + 10); memo.style.zoom = zoomLevel + '%'; }
+    function zoomOut() { zoomLevel = Math.max(30, zoomLevel - 10); memo.style.zoom = zoomLevel + '%'; }
+    function zoomReset() { zoomLevel = 100; memo.style.zoom = '100%'; }
+
+    function renderRuler() {
+        const bar = document.getElementById('ruler-bar');
+        bar.innerHTML = '';
+        const unitPx = 50;
+        const totalUnits = 60;
+        for (let i = 0; i <= totalUnits; i++) {
+            const tick = document.createElement('div');
+            tick.className = 'ruler-tick';
+            tick.style.width = unitPx + 'px';
+            tick.textContent = i;
+            bar.appendChild(tick);
+        }
+    }
+
+    /* ================= ファイルメニュー機能 ================= */
+    function saveAsText() {
+        if (!currentPath.file) return alert('ファイルを選択してください');
+        const blob = new Blob([memo.innerText], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = currentPath.file + '.txt';
+        a.click();
+    }
+
+    function saveAsPNG() {
+        if (!currentPath.file) return alert('ファイルを選択してください');
+        exportHtmlAsPNG(memo.innerHTML, currentPath.file);
+    }
+
+    function printFile() { window.print(); }
+    function quickPrint() { window.print(); }
+
+    function showPreview() {
+        const w = window.open('', '_blank');
+        if (!w) { alert('ポップアップがブロックされました'); return; }
+        w.document.write(`<html><head><title>プレビュー - ${currentPath.file || ''}</title></head><body style="font-family:sans-serif; padding:40px; max-width:210mm; margin:auto;">${memo.innerHTML}</body></html>`);
+        w.document.close();
+    }
+
+    function openJSON() { document.getElementById('json-file-input').click(); }
+    function handleJsonOpen(e) {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const imported = JSON.parse(ev.target.result);
+                Object.assign(db, imported);
+                save(); renderTree();
+                alert('JSONを読み込みました');
+            } catch (err) { alert('JSONの読み込みに失敗しました'); }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    }
+
+    function sendEmailCurrent() {
+        if (!currentPath.file) return alert('ファイルを選択してください');
+        const subject = encodeURIComponent(currentPath.file);
+        const body = encodeURIComponent(memo.innerText);
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    }
+
+    /* ================= 挿入メニュー機能 ================= */
+    function triggerInsertImage() { document.getElementById('image-insert-input').click(); }
+    function handleImageInsert(e) {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            const probe = new Image();
+            probe.onload = () => {
+                const maxW = 320;
+                const scale = probe.width > maxW ? maxW / probe.width : 1;
+                const w = Math.round(probe.width * scale) || 160;
+                const h = Math.round(probe.height * scale) || 120;
+                const html = `<span class="resizable-box" draggable="true" contenteditable="false" style="width:${w}px;height:${h}px;"><img src="${ev.target.result}"></span>&nbsp;`;
+                memo.focus();
+                document.execCommand('insertHTML', false, html);
+                save(); updateCharCount();
+            };
+            probe.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    }
+
+    function insertShapeSVG(type) {
+        const color = document.getElementById('shape-color-input').value || '#4da3ff';
+        let vb, w, h, inner;
+        if (type === 'rect') { vb = '0 0 120 80'; w = 120; h = 80; inner = `<rect x="2" y="2" width="116" height="76" fill="${color}" stroke="#333" stroke-width="2"/>`; }
+        else if (type === 'circle') { vb = '0 0 100 100'; w = 100; h = 100; inner = `<circle cx="50" cy="50" r="47" fill="${color}" stroke="#333" stroke-width="2"/>`; }
+        else if (type === 'triangle') { vb = '0 0 100 90'; w = 100; h = 90; inner = `<polygon points="50,4 96,86 4,86" fill="${color}" stroke="#333" stroke-width="2"/>`; }
+        else if (type === 'line') { vb = '0 0 120 24'; w = 120; h = 24; inner = `<line x1="4" y1="12" x2="116" y2="12" stroke="${color}" stroke-width="4" stroke-linecap="round"/>`; }
+        else { vb = '0 0 120 30'; w = 120; h = 30; inner = `<line x1="4" y1="15" x2="94" y2="15" stroke="${color}" stroke-width="4" stroke-linecap="round"/><polygon points="94,4 118,15 94,26" fill="${color}"/>`; }
+        const svg = `<svg viewBox="${vb}" preserveAspectRatio="none">${inner}</svg>`;
+        const html = `<span class="resizable-box" draggable="true" contenteditable="false" style="width:${w}px;height:${h}px;">${svg}</span>&nbsp;`;
+        memo.focus();
+        document.execCommand('insertHTML', false, html);
+        save(); updateCharCount();
+    }
+
+    function applyColorToSelectedShape() {
+        if (!selectedBox) return;
+        const svg = selectedBox.querySelector('svg');
+        if (!svg) return;
+        const color = document.getElementById('shape-color-input').value;
+        svg.querySelectorAll('[fill]').forEach(el => { if (el.getAttribute('fill') !== 'none') el.setAttribute('fill', color); });
+        svg.querySelectorAll('[stroke]').forEach(el => el.setAttribute('stroke', color));
+        save(); updateCharCount();
+    }
+
+    function triggerInsertChart() {
+        loadXLSX().then(() => document.getElementById('excel-chart-input').click())
+                  .catch(() => alert('グラフ機能の読み込みに失敗しました（ネットワーク接続を確認してください）'));
+    }
+    let xlsxLoadPromise = null;
+    function loadXLSX() {
+        if (window.XLSX) return Promise.resolve();
+        if (xlsxLoadPromise) return xlsxLoadPromise;
+        xlsxLoadPromise = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+        });
+        return xlsxLoadPromise;
+    }
+    function handleExcelChart(e) {
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+            try {
+                const data = new Uint8Array(ev.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                drawChartFromRows(rows);
+            } catch (err) { alert('ファイルの読み込みに失敗しました'); }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    }
+    function drawChartFromRows(rows) {
+        const dataRows = rows.filter(r => r && r.length >= 2);
+        if (dataRows.length === 0) { alert('グラフ化できるデータが見つかりませんでした'); return; }
+        const startIdx = (typeof dataRows[0][1] !== 'number') ? 1 : 0;
+        const labels = [], values = [];
+        for (let i = startIdx; i < dataRows.length; i++) {
+            labels.push(String(dataRows[i][0]));
+            values.push(Number(dataRows[i][1]) || 0);
+        }
+        if (values.length === 0) { alert('グラフ化できるデータが見つかりませんでした'); return; }
+        const canvas = document.createElement('canvas');
+        canvas.width = 420; canvas.height = 260;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 420, 260);
+        const max = Math.max(...values) * 1.1 || 1;
+        const barW = 340 / values.length;
+        ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(40, 10); ctx.lineTo(40, 220); ctx.lineTo(400, 220); ctx.stroke();
+        values.forEach((v, i) => {
+            const barH = (v / max) * 190;
+            const x = 50 + i * barW;
+            ctx.fillStyle = '#0078d4';
+            ctx.fillRect(x, 220 - barH, barW * 0.7, barH);
+            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(labels[i].slice(0, 6), x + barW * 0.35, 232);
+        });
+        const dataUrl = canvas.toDataURL('image/png');
+        memo.focus();
+        document.execCommand('insertHTML', false, `<span class="resizable-box" draggable="true" contenteditable="false" style="width:280px;height:173px;"><img src="${dataUrl}"></span>&nbsp;`);
+        save(); updateCharCount();
+    }
+
+    /* ================= 操作メニュー機能 ================= */
+    function toggleSelectionMode() {
+        selectionMode = !selectionMode;
+        document.getElementById('selection-mode-label').textContent = selectionMode ? '選択を終了' : '選択を開始';
+        memo.focus();
+    }
+    function moveOrExtend(direction) {
+        memo.focus();
+        const sel = window.getSelection();
+        const mode = selectionMode ? 'extend' : 'move';
+        if (direction === 'up') sel.modify(mode, 'backward', 'line');
+        else if (direction === 'down') sel.modify(mode, 'forward', 'line');
+        else if (direction === 'left') sel.modify(mode, 'backward', 'character');
+        else if (direction === 'right') sel.modify(mode, 'forward', 'character');
+    }
+    function doCut() { memo.focus(); document.execCommand('cut'); save(); updateCharCount(); }
+    function doCopy() { memo.focus(); document.execCommand('copy'); }
+    async function doPaste() {
+        memo.focus();
+        try {
+            const text = await navigator.clipboard.readText();
+            document.execCommand('insertText', false, text);
+        } catch (err) {
+            document.execCommand('paste');
+        }
+        save(); updateCharCount();
+    }
+    function doDelete() { memo.focus(); document.execCommand('delete'); save(); updateCharCount(); }
+
+    /* ================= 図形・画像：選択／移動／リサイズ ================= */
+    function selectResizableBox(box) {
+        if (selectedBox && selectedBox !== box) selectedBox.classList.remove('selected');
+        selectedBox = box;
+        box.classList.add('selected');
+        const handles = document.getElementById('shape-handles');
+        if (handles) handles.style.display = 'block';
+        positionHandles();
+    }
+    function deselectResizableBox() {
+        if (selectedBox) selectedBox.classList.remove('selected');
+        selectedBox = null;
+        const handles = document.getElementById('shape-handles');
+        if (handles) handles.style.display = 'none';
+    }
+    function positionHandles() {
+        if (!selectedBox) return;
+        const r = selectedBox.getBoundingClientRect();
+        const eH = document.querySelector('.rs-handle.e');
+        const sH = document.querySelector('.rs-handle.s');
+        const seH = document.querySelector('.rs-handle.se');
+        const rotH = document.querySelector('.rs-handle.rot');
+        if (!eH || !sH || !seH) return;
+        eH.style.left = r.right + 'px';
+        eH.style.top = (r.top + r.height / 2) + 'px';
+        sH.style.left = (r.left + r.width / 2) + 'px';
+        sH.style.top = r.bottom + 'px';
+        seH.style.left = r.right + 'px';
+        seH.style.top = r.bottom + 'px';
+        if (rotH) {
+            rotH.style.left = (r.left + r.width / 2) + 'px';
+            rotH.style.top = (r.top - 26) + 'px';
+        }
+    }
+
+    if (memo) {
+        memo.addEventListener('click', (e) => {
+            const box = e.target.closest('.resizable-box');
+            if (box) { e.stopPropagation(); selectResizableBox(box); }
+        });
+        memo.addEventListener('scroll', positionHandles);
+        memo.addEventListener('dragstart', (e) => {
+            const box = e.target.closest('.resizable-box');
+            if (box) { draggedBox = box; e.dataTransfer.effectAllowed = 'move'; }
+        });
+        memo.addEventListener('dragover', (e) => { if (draggedBox) e.preventDefault(); });
+        memo.addEventListener('drop', (e) => {
+            if (!draggedBox) return;
+            e.preventDefault();
+            let range = null;
+            if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(e.clientX, e.clientY);
+            } else if (document.caretPositionFromPoint) {
+                const p = document.caretPositionFromPoint(e.clientX, e.clientY);
+                if (p) { range = document.createRange(); range.setStart(p.offsetNode, p.offset); }
+            }
+            if (range) {
+                draggedBox.remove();
+                range.insertNode(draggedBox);
+                selectResizableBox(draggedBox);
+            }
+            draggedBox = null;
+            save(); updateCharCount();
+        });
+    }
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.resizable-box') && !e.target.closest('#shape-handles')) deselectResizableBox();
+    });
+    window.addEventListener('resize', positionHandles);
+
+    document.querySelectorAll('.rs-handle').forEach(h => {
+        h.addEventListener('pointerdown', (ev) => {
+            if (!selectedBox) return;
+            ev.preventDefault(); ev.stopPropagation();
+            h.setPointerCapture(ev.pointerId);
+            const pos = h.dataset.pos;
+
+            if (pos === 'rot') {
+                const rect = selectedBox.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+                function onMoveRot(e2) {
+                    const angle = Math.atan2(e2.clientY - cy, e2.clientX - cx) * 180 / Math.PI + 90;
+                    selectedBox.style.transform = `rotate(${angle}deg)`;
+                }
+                function onUpRot() {
+                    document.removeEventListener('pointermove', onMoveRot);
+                    document.removeEventListener('pointerup', onUpRot);
+                    positionHandles();
+                    save(); updateCharCount();
+                }
+                document.addEventListener('pointermove', onMoveRot);
+                document.addEventListener('pointerup', onUpRot);
+                return;
+            }
+
+            const startX = ev.clientX, startY = ev.clientY;
+            const startW = selectedBox.offsetWidth, startH = selectedBox.offsetHeight;
+            function onMove(e2) {
+                const dx = e2.clientX - startX, dy = e2.clientY - startY;
+                if (pos === 'e' || pos === 'se') selectedBox.style.width = Math.max(20, startW + dx) + 'px';
+                if (pos === 's' || pos === 'se') selectedBox.style.height = Math.max(20, startH + dy) + 'px';
+                positionHandles();
+            }
+            function onUp() {
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                save(); updateCharCount();
+            }
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+        });
+    });
+
+    /* ================= ルーラー：ワードパット風インデントマーカー ================= */
+    let indentLeftPx = (typeof appSettings.indentLeft === 'number') ? appSettings.indentLeft : 20;
+    let indentRightPx = (typeof appSettings.indentRight === 'number') ? appSettings.indentRight : 20;
+
+    function positionRulerMarkers() {
+        const rulerBar = document.getElementById('ruler-bar');
+        const leftMarker = document.getElementById('ruler-marker-left');
+        const rightMarker = document.getElementById('ruler-marker-right');
+        if (!rulerBar || !leftMarker || !rightMarker) return;
+        const rulerWidth = rulerBar.clientWidth || 600;
+        leftMarker.style.left = indentLeftPx + 'px';
+        rightMarker.style.left = Math.max(indentLeftPx + 20, rulerWidth - indentRightPx) + 'px';
+    }
+    function applyIndent() {
+        if (!memo) return;
+        memo.style.paddingLeft = indentLeftPx + 'px';
+        memo.style.paddingRight = indentRightPx + 'px';
+        appSettings.indentLeft = indentLeftPx;
+        appSettings.indentRight = indentRightPx;
+        saveSettings();
+    }
+    function setupRulerDrag() {
+        const rulerBar = document.getElementById('ruler-bar');
+        const leftMarker = document.getElementById('ruler-marker-left');
+        const rightMarker = document.getElementById('ruler-marker-right');
+        if (!rulerBar || !leftMarker || !rightMarker) { applyIndent(); return; }
+        function bind(marker, isLeft) {
+            marker.addEventListener('pointerdown', (ev) => {
+                ev.preventDefault();
+                marker.setPointerCapture(ev.pointerId);
+                function onMove(e2) {
+                    const rect = rulerBar.getBoundingClientRect();
+                    const rulerWidth = rulerBar.clientWidth || 600;
+                    let x = e2.clientX - rect.left;
+                    if (isLeft) {
+                        indentLeftPx = Math.max(0, Math.min(x, rulerWidth - indentRightPx - 20));
+                    } else {
+                        indentRightPx = Math.max(0, Math.min(rulerWidth - x, rulerWidth - indentLeftPx - 20));
+                    }
+                    positionRulerMarkers();
+                    applyIndent();
+                }
+                function onUp() {
+                    marker.releasePointerCapture(ev.pointerId);
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                }
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+            });
+        }
+        bind(leftMarker, true);
+        bind(rightMarker, false);
+        positionRulerMarkers();
+        applyIndent();
+    }
+
+    /* ================= 初期化 ================= */
+    window.onload = () => {
+        renderRuler();
+        applySettingsToEditor();
+        refreshMenuStates();
+        setupRulerDrag();
+        renderTree();
+        if (currentPath.file) selectFile(currentPath.folder, currentPath.file);
+        updateLineNumbers();
+    };
+</script>
+</body>
+</html>
