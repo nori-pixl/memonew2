@@ -352,6 +352,21 @@
             <button onclick="sendEmailCurrent()">メールを送信（現在のファイル）</button>
             <div class="dropdown-sep"></div>
             <button onclick="openVersionHistory()">バージョン履歴</button>
+            <button onclick="openVersionPopup()">バージョン</button>
+
+<script>
+function openVersionPopup() {
+  const popupHtml = `<img src='memo.png' width='100'><br><h3>norimemo</h3><h4>V4.0.0</h4><p>お使いのnorimemoは最新です。</p>`;
+  const popupUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(popupHtml);
+
+  window.open(
+    popupUrl,
+    'norimemo_version',
+    'width=400,height=400,resizable=no,noopener,noreferrer'
+  );
+}
+</script>
+
         </div>
     </div>
 
