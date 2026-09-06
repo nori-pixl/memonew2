@@ -1,0 +1,10 @@
+RewriteEngine On
+# 拡張子 .html のアクセスを非表示にする
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.*)$ $1.html [L]
+
+# .html付きでアクセスされたら拡張子なしにリダイレクト（正規化）
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/([^/]+\/)?[^\s]+\.html[\s]
+RewriteCond %{REQUEST_URI} !^/wp-admin/
+RewriteRule ^(.*)\.html$ /$1 [R=301,L]
