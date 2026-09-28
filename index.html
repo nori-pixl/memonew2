@@ -35,12 +35,12 @@
     </script>
 
     <link rel="icon" href="memo.png" type="image/png">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/turndown/7.1.2/turndown.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/loader.min.js"></script>
+    <link rel="stylesheet" href="lib/font-awesome/css/all.min.css">
+    <script src="lib/marked/marked.min.js"></script>
+    <script src="lib/turndown/turndown.js"></script>
+    <script src="lib/html2canvas/html2canvas.min.js"></script>
+    <script src="lib/jspdf/jspdf.umd.min.js"></script>
+    <script src="lib/monaco-editor/min/vs/loader.js"></script>
     <style>
         :root { --bg-color: #ffffff; --text-color: #333333; --sidebar-bg: #f0f2f5; --active-blue: #0078d4; --app-scale: 1 }
         /* 全体サイズをまとめて調整したいときはこの --app-scale の値だけ変更してください（例: 0.85 や 1.2） */
@@ -1957,7 +1957,7 @@ function openVersionPopup() {
         if (monacoLoadPromise) return monacoLoadPromise;
         monacoLoadPromise = new Promise((resolve, reject) => {
             if (!window.require || !window.require.config) { reject(new Error('Monacoローダーが読み込まれていません')); return; }
-            require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
+            require.config({ paths: { vs: new URL('lib/monaco-editor/min/vs', location.href).href } });
             require(['vs/editor/editor.main'], () => resolve(), (err) => reject(err));
         });
         return monacoLoadPromise;
@@ -2293,7 +2293,7 @@ function openVersionPopup() {
         if (xlsxLoadPromise) return xlsxLoadPromise;
         xlsxLoadPromise = new Promise((resolve, reject) => {
             const s = document.createElement('script');
-            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            s.src = 'lib/xlsx/xlsx.full.min.js';
             s.onload = resolve;
             s.onerror = reject;
             document.head.appendChild(s);
