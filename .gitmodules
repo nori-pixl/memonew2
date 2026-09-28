@@ -1,0 +1,21 @@
+[submodule "lib/github/marked"]
+	path = lib/github/marked
+	url = https://github.com/markedjs/marked.git
+[submodule "lib/github/turndown"]
+	path = lib/github/turndown
+	url = https://github.com/mixmark-io/turndown.git
+[submodule "lib/github/html2canvas"]
+	path = lib/github/html2canvas
+	url = https://github.com/niklasvh/html2canvas.git
+[submodule "lib/github/jspdf"]
+	path = lib/github/jspdf
+	url = https://github.com/parallax/jsPDF.git
+[submodule "lib/github/monaco-editor"]
+	path = lib/github/monaco-editor
+	url = https://github.com/microsoft/monaco-editor.git
+[submodule "lib/github/font-awesome"]
+	path = lib/github/font-awesome
+	url = https://github.com/FortAwesome/Font-Awesome.git
+[submodule "lib/github/sheetjs"]
+	path = lib/github/sheetjs
+	url = https://github.com/SheetJS/sheetjs.git
