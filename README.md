@@ -97,7 +97,7 @@
 - フォント・アイコン・各ライブラリ（MiSans, Monaco, jsPDF など）はCDNから読み込むため、初回はネット接続が必要です。
 - アプリ版でHTTP共有や音声入力を使うには、ビルドしたAPKか開発ビルドが必要です（Expo Goでは動きません）。
 <br><hr>
-# norimemo（Expo / React Native版）V4.0.1
+# norimemo（Expo / React Native版）V4.2.2
 
 メモ帳のHTMLをWebViewで包んだアプリです。WebViewで動かないブラウザ機能は、アプリ側（ネイティブ）に橋渡ししています。
 
